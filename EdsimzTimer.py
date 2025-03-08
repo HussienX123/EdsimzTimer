@@ -113,8 +113,8 @@ running = data["running"]
 
 # GUI Setup
 root = tk.Tk()
-root.title("Pomodoro Timer")
-root.geometry("300x200")
+root.title("Edsimz Timer")
+root.geometry("400x200")
 root.configure(bg="black")
 
 # UI Elements
