@@ -83,24 +83,29 @@ def check_for_updates():
     local_version = get_local_version()
 
     if not latest_version:
+        print("Could not fetch update info.")
         return
 
-    if latest_version["version"] > local_version["version"]:
-        print(f"New version available: {latest_version['version']}")
+    latest_ver = float(latest_version["version"])
+    local_ver = float(local_version["version"])
+
+    if latest_ver > local_ver:
+        print(f"New version available: {latest_ver}")
         os.makedirs(UPDATE_FOLDER, exist_ok=True)
         zip_path = os.path.join(UPDATE_FOLDER, "update.zip")
+
         download_update(latest_version["download_url"], zip_path)
         apply_update(zip_path)
-        
+
         # Save new version info
         with open(LOCAL_VERSION_FILE, "w") as file:
             json.dump(latest_version, file)
 
-        messagebox.showinfo("Update", "A new version has been installed. Please restart the application.")
-        exit()
+        messagebox.showinfo("Update", "A new version has been installed. Restart the application to apply changes.")
+        return True  # Indicate update was applied
     else:
         print("No updates available.")
-
+        return False
 # Load saved data
 data = load_data()
 time_left = data["time_left"]
