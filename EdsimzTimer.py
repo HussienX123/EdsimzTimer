@@ -4,6 +4,8 @@ import os
 import json
 import tkinter as tk
 from tkinter import messagebox
+import ttkbootstrap as ttk
+from ttkbootstrap.constants import *
 
 # GitHub raw version.json URL
 VERSION_URL = "https://raw.githubusercontent.com/HussienX123/EdsimzTimer/refs/heads/main/dist/version.json"
@@ -44,6 +46,13 @@ def start_timer():
 def pause_timer():
     global running
     running = False
+    save_data()
+
+def restart_timer():
+    global time_left, running
+    time_left = 1500  # Reset to 25 minutes
+    running = False
+    time_label.config(text=format_time(time_left))
     save_data()
 
 def toggle_always_on_top():
@@ -106,32 +115,39 @@ def check_for_updates():
     else:
         print("No updates available.")
         return False
+
 # Load saved data
 data = load_data()
 time_left = data["time_left"]
 running = data["running"]
 
-# GUI Setup
-root = tk.Tk()
-root.title("Edsimz Timer")
-root.geometry("400x200")
-root.configure(bg="black")
+# GUI Setup with ttkbootstrap
+root = ttk.Window(themename="darkly")
+root.title("Edsimz Timer Pro Max")
+root.geometry("400x300")
+root.resizable(False, False)
 
 # UI Elements
-title_label = tk.Label(root, text="work", fg="white", bg="black", font=("Arial", 20))
-title_label.pack()
+title_label = ttk.Label(root, text="Working", font=("Arial", 20))
+title_label.pack(pady=10)
 
-time_label = tk.Label(root, text=format_time(time_left), fg="white", bg="black", font=("Arial", 30))
-time_label.pack()
+time_label = ttk.Label(root, text=format_time(time_left), font=("Arial", 40))
+time_label.pack(pady=20)
 
-start_button = tk.Button(root, text="Start", command=start_timer, font=("Arial", 14))
-start_button.pack()
+button_frame = ttk.Frame(root)
+button_frame.pack(pady=10)
 
-pause_button = tk.Button(root, text="Pause", command=pause_timer, font=("Arial", 14))
-pause_button.pack()
+start_button = ttk.Button(button_frame, text="Start", command=start_timer, bootstyle=SUCCESS)
+start_button.grid(row=0, column=0, padx=5)
 
-keep_top_button = tk.Button(root, text="Keep on Top", command=toggle_always_on_top, font=("Arial", 14))
-keep_top_button.pack()
+pause_button = ttk.Button(button_frame, text="Pause", command=pause_timer, bootstyle=WARNING)
+pause_button.grid(row=0, column=1, padx=5)
+
+restart_button = ttk.Button(button_frame, text="Restart", command=restart_timer, bootstyle=INFO)
+restart_button.grid(row=0, column=2, padx=5)
+
+keep_top_button = ttk.Button(root, text="Keep on Top", command=toggle_always_on_top, bootstyle=SECONDARY)
+keep_top_button.pack(pady=10)
 
 # Check for updates when the application starts
 check_for_updates()
