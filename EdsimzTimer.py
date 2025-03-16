@@ -8,6 +8,14 @@ from tkinter import messagebox, ttk
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 from ttkbootstrap import Style
+import winsound
+import hashlib
+import time
+import sys
+import subprocess
+import psutil
+
+# Get the absolute path to the script's directory
 
 # GitHub raw version.json URL
 VERSION_URL = "https://raw.githubusercontent.com/HussienX123/EdsimzTimer/refs/heads/main/dist/version.json"
@@ -58,11 +66,14 @@ def start_timer():
     if not running:
         running = True
         update_timer()
+        winsound.PlaySound("SystemQuestion", winsound.SND_ASYNC)
 
 def pause_timer():
     global running
     running = False
     save_data()
+    winsound.PlaySound("SystemQuestion", winsound.SND_ASYNC)
+
 
 def restart_timer():
     global time_left, running
@@ -73,9 +84,11 @@ def restart_timer():
     running = False
     time_label.config(text=format_time(time_left))
     save_data()
+    winsound.PlaySound("SystemQuestion", winsound.SND_ASYNC)
     
 def toggle_always_on_top():
     root.attributes("-topmost", not root.attributes("-topmost"))
+    winsound.PlaySound("SystemQuestion", winsound.SND_ASYNC)
 
 def show_settings():
     # Timer Duration Label and Entry
@@ -161,47 +174,167 @@ def get_latest_version():
         return None
 
 def get_local_version():
-    if os.path.exists(LOCAL_VERSION_FILE):
+    if not os.path.exists(LOCAL_VERSION_FILE):
+        print("Local version file not found. Downloading latest version...")
+        try:
+            # Download the latest version file
+            response = requests.get(VERSION_URL)
+            response.raise_for_status()  # Raise an error for bad responses (4xx or 5xx)
+            
+            # Save the downloaded content to the local version file
+            with open(LOCAL_VERSION_FILE, "w") as file:
+                file.write(response.text)
+            
+            print("Latest version file downloaded and saved.")
+        except Exception as e:
+            print(f"Error downloading version file: {e}")
+            return {"version": "0.0"}  # Return default version if download fails
+    
+    # Read the local version file
+    try:
         with open(LOCAL_VERSION_FILE, "r") as file:
             return json.load(file)
-    return {"version": "0.0"}  # Default version if no local file exists
+    except json.JSONDecodeError as e:
+        print(f"Error reading version file: {e}")
+        return {"version": "0.0"}  # Return default version if the file is not valid JSON
 
 def download_update(url, filename, progress_callback=None):
     print("Downloading update...")
-    response = requests.get(url, stream=True)
-    total_size = int(response.headers.get("content-length", 0))
-    downloaded_size = 0
+    try:
+        response = requests.get(url, stream=True)
+        response.raise_for_status()  # Raise an error for bad responses (4xx or 5xx)
+        
+        total_size = int(response.headers.get("content-length", 0))
+        downloaded_size = 0
 
-    with open(filename, "wb") as file:
-        for chunk in response.iter_content(chunk_size=1024):
-            file.write(chunk)
-            downloaded_size += len(chunk)
-            if progress_callback:
-                progress_callback(downloaded_size, total_size)
-    print("Download complete!")
+        with open(filename, "wb") as file:
+            for chunk in response.iter_content(chunk_size=1024):
+                file.write(chunk)
+                file.flush()  # Ensure data is written to disk
+                downloaded_size += len(chunk)
+                if progress_callback:
+                    progress_callback(downloaded_size, total_size)
+        
+        print("Download complete!")
+        print(f"Downloaded file size: {os.path.getsize(filename)} bytes")
+        print(f"Expected file size: {total_size} bytes")
+        print(f"File hash (SHA256): {calculate_file_hash(filename)}")
+        
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error downloading update: {e}")
+        return False
+
+def calculate_file_hash(filename, algorithm="sha256"):
+    """Calculate the hash of a file."""
+    hash_func = hashlib.new(algorithm)
+    with open(filename, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_func.update(chunk)
+    return hash_func.hexdigest()
 
 def apply_update(zip_path):
     print("Extracting update...")
+    if not os.path.exists(zip_path):
+        messagebox.showinfo('apply update ', f"Error: File not found: {zip_path}")
+        return
+    
+    if not is_zipfile(zip_path):
+        messagebox.showinfo('apply update ', f"Error: File is not a valid ZIP file: {zip_path}")
+        return
+    
     # Extract to a temporary folder
     if os.path.exists(TEMP_FOLDER):
         shutil.rmtree(TEMP_FOLDER)
     os.makedirs(TEMP_FOLDER, exist_ok=True)
-    with zipfile.ZipFile(zip_path, "r") as zip_ref:
-        zip_ref.extractall(TEMP_FOLDER)
-    print("Update extracted to temporary folder.")
+    
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(TEMP_FOLDER)
+        messagebox.showinfo('apply update ', "Update extracted to temporary folder.")
+        
+        # Debug: Print the contents of the TEMP_FOLDER
+        messagebox.showinfo('apply update ', f"Contents of {TEMP_FOLDER}: {os.listdir(TEMP_FOLDER)}")
+        
+        # Move files from the temp folder to the application directory
+        def is_file_in_use(file_path):
+            """Check if a file is in use by another process."""
+            for proc in psutil.process_iter(['pid', 'name', 'open_files']):
+                try:
+                    for file in proc.info['open_files']:
+                        if file.path == file_path:
+                            return True
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    pass
+            return False
 
-    # Notify the user to restart the application
-    messagebox.showinfo("Update", "A new version has been downloaded. Please restart the application to apply the update.")
+
+        # Example usage in the file move loop
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        for item in os.listdir(TEMP_FOLDER):
+            src = os.path.join(TEMP_FOLDER, item)
+            dst = os.path.join(BASE_DIR, item)
+            print(f"Moving {src} to {dst}")  # Debug: Print source and destination paths
+            
+            if not os.path.exists(src):
+                print(f"Error: Source file does not exist: {src}")
+                continue
+            
+            if is_file_in_use(src):
+                print(f"Error: File is in use: {src}")
+                messagebox.showerror('apply update ', f"File is in use: {src}. Please close any programs using this file.")
+                return
+            
+            if os.path.exists(dst):
+                try:
+                    if os.path.isdir(dst):
+                        shutil.rmtree(dst)
+                    else:
+                        os.remove(dst)
+                except PermissionError as e:
+                    messagebox.showerror('apply update ', f"Permission denied: {e}. Please run the application as an administrator.")
+                    return
+            
+            try:
+                shutil.move(src, dst)
+                print(f"Moved {src} to {dst} successfully.")
+            except Exception as e:
+                print(f"Error moving {src} to {dst}: {e}")
+                messagebox.showerror('apply update ', f"Error moving files: {e}")
+                return   
+        
+        # Update the version.json file
+        latest_version = get_latest_version()
+        if latest_version:
+            with open(LOCAL_VERSION_FILE, "w") as file:
+                json.dump(latest_version, file)
+                messagebox.showinfo('apply update ', "Test changing the json file version")
+        
+        # Notify the user and restart the application
+        answer = messagebox.askyesno(title='Update',
+                message='A new version has been installed. The application will now restart.')
+        if answer:
+            root.destroy()
+        else:
+            root.destroy()
+
+    except zipfile.BadZipFile:
+        messagebox.showerror('apply update ', f"Error: File is not a valid ZIP file: {zip_path}")
+    except Exception as e:
+        messagebox.showerror('apply update ', f"Error extracting update: {e}")
+
+def is_zipfile(filename):
+    """Check if the file is a valid ZIP file."""
+    return zipfile.is_zipfile(filename)
 
 def show_update_prompt(latest_version):
     # Create a custom dialog for the update prompt
-    update_window = ttk.Toplevel(root)
+    update_window = ttk.Toplevel(root, bg="black")
     update_window.title("Update Available")
     update_window_width = 400  # Wider window
     update_window_height = 150
     center_window(update_window, update_window_width, update_window_height)
     update_window.resizable(False, False)
-
     # Make the update window modal
     update_window.grab_set()
 
@@ -233,13 +366,16 @@ def show_download_progress(download_url):
     # Create a new window for the download progress
     progress_window = ttk.Toplevel(root)
     progress_window.title("Downloading Update")
-    progress_window_width = 400  # Wider window
+    progress_window_width = 400
     progress_window_height = 100
     center_window(progress_window, progress_window_width, progress_window_height)
     progress_window.resizable(False, False)
 
     # Make the progress window modal
     progress_window.grab_set()
+
+    # Disable the main application window
+    root.withdraw()  # Hide the main window
 
     progress_label = ttk.Label(progress_window, text="Downloading update...", font=("Arial", 12))
     progress_label.pack(pady=10)
@@ -253,12 +389,25 @@ def show_download_progress(download_url):
         progress_label.config(text=f"Downloading... {progress}%")
         if downloaded_size >= total_size:
             progress_window.destroy()
-            apply_update(os.path.join(UPDATE_FOLDER, "update.zip"))
+            root.deiconify()  # Restore the main window
+            
+            # Add a small delay to ensure the file is fully written
+            time.sleep(1)  # Wait for 1 second
+            
+            # Check if the downloaded file is valid
+            zip_path = os.path.join(UPDATE_FOLDER, "update.zip")
+            if is_zipfile(zip_path):
+                apply_update(zip_path)
+            else:
+                messagebox.showerror("Error", "The downloaded file is not a valid ZIP file.")
 
     # Start the download
     os.makedirs(UPDATE_FOLDER, exist_ok=True)
     zip_path = os.path.join(UPDATE_FOLDER, "update.zip")
-    download_update(download_url, zip_path, update_progress)
+    if not download_update(download_url, zip_path, update_progress):
+        progress_window.destroy()
+        root.deiconify()  # Restore the main window
+        messagebox.showerror("Error", "Failed to download the update.")
 
 def check_for_updates():
     latest_version = get_latest_version()
@@ -278,14 +427,14 @@ def check_for_updates():
 
 def show_custom_message(title, message):
     # Create a custom top-level window
-    message_window = ttk.Toplevel(root)
+    message_window = ttk.Toplevel(root, bg="black")
     message_window.title(title)
     message_window_width = 300
     message_window_height = 100
     center_window(message_window, message_window_width, message_window_height)  # Center the window
     message_window.resizable(False, False)
     message_window.configure(background="black")  # Set the background to black
-    
+    winsound.PlaySound("SystemHand", winsound.SND_ALIAS)
     # Make the window always on top
     message_window.attributes("-topmost", True)
     
@@ -337,13 +486,13 @@ style = ttk.Style()
 style.configure("Start.TButton", font=("Arial", 10), background="#22ff68", foreground="black" , relief='flat', highlightthickness=0, bd=0)
 
 # Style for the Pause button
-style.configure("Pause.TButton", font=("Arial", 10), background="#ff5733", foreground="white", relief='flat', highlightthickness=0, bd=0)
+style.configure("Pause.TButton", font=("Arial", 10), background="#ff5733", foreground="black", relief='flat', highlightthickness=0, bd=0)
 
 # Style for the Restart button
-style.configure("Restart.TButton", font=("Arial", 10), background="#3498db", foreground="white", relief='flat', highlightthickness=0, bd=0)
+style.configure("Restart.TButton", font=("Arial", 10), background="#3498db", foreground="black", relief='flat', highlightthickness=0, bd=0)
 
 # Style for the Keep on Top button
-style.configure("KeepOnTop.TButton", font=("Arial", 10), background="#9b59b6", foreground="white", relief='flat', highlightthickness=0, bd=0)
+style.configure("KeepOnTop.TButton", font=("Arial", 10), background="#9b59b6", foreground="black", relief='flat', highlightthickness=0, bd=0)
 
 # Style for the Settings button
 style.configure("Settings.TButton", font=("Arial", 10), background="#2ecc71", foreground="black", relief='flat', highlightthickness=0, bd=0)
